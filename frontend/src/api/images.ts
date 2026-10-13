@@ -35,28 +35,10 @@ export function rawUrl(id: number): string {
 }
 
 /**
- * POST /api/images/upload
- * multipart/form-data，字段名 file，可重复传多个。
+ * POST /api/images/upload —— 只收图片。
+ * 实现与文件库共用（见 api/files.ts），差异只在 endpoint。
  */
-export async function uploadImages(
-  files: File[],
-  onProgress?: (percent: number) => void
-): Promise<UploadResult> {
-  const form = new FormData()
-  for (const file of files) {
-    form.append('file', file, file.name)
-  }
-  const res = await http.post<UploadResult>('/images/upload', form, {
-    onUploadProgress: (event) => {
-      if (!onProgress) return
-      const total = event.total ?? 0
-      if (total > 0) {
-        onProgress(Math.min(100, Math.round((event.loaded / total) * 100)))
-      }
-    }
-  })
-  return res.data
-}
+export { uploadImages } from './files'
 
 /** PATCH /api/images/{id} → 409 同名冲突 / 400 非法文件名 */
 export async function updateImage(id: number, payload: RenameAssetRequest): Promise<AssetDto> {

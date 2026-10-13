@@ -1,0 +1,23 @@
+{
+  "name": "picman-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PicMan 的 Cloudflare Workers 实现：百度网盘图片/文件管理",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:init": "wrangler d1 execute picman --remote --file=./src/db/schema.sql",
+    "db:init:local": "wrangler d1 execute picman --local --file=./src/db/schema.sql",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261006.1",
+    "typescript": "~5.9.0",
+    "wrangler": "^4.40.0"
+  },
+  "dependencies": {
+    "hash-wasm": "^4.12.0"
+  }
+}

@@ -1,4 +1,5 @@
 import http from './client'
+import { computeBlockMd5 } from '../utils/md5'
 import type {
   AssetDto,
   AssetKind,
@@ -12,6 +13,7 @@ import type {
   SetAssetTagsRequest,
   SyncRequest,
   SyncResult,
+  UploadFailure,
   UploadResult
 } from '../types'
 
@@ -64,25 +66,64 @@ export function downloadFile(asset: Pick<AssetDto, 'id'>): void {
   document.body.removeChild(a)
 }
 
-/** POST /api/files/upload —— 任意类型，字段名 file，可重复 */
+/**
+ * POST /api/files/upload —— 任意类型。
+ *
+ * 与自建版的两点差异，都是为了绕开 Cloudflare 的 CPU 限制：
+ *   1. 一次请求只传一个文件（多文件在前端循环），这样进度和失败原因都能精确到单个文件
+ *   2. 分片 MD5 在浏览器里算好后随表单提交（字段 blockMd5）
+ */
 export async function uploadFiles(
   files: File[],
   onProgress?: (percent: number) => void
 ): Promise<UploadResult> {
-  const form = new FormData()
-  for (const file of files) {
-    form.append('file', file, file.name)
-  }
-  const res = await http.post<UploadResult>('/files/upload', form, {
-    onUploadProgress: (event) => {
-      if (!onProgress) return
-      const total = event.total ?? 0
-      if (total > 0) {
-        onProgress(Math.min(100, Math.round((event.loaded / total) * 100)))
-      }
+  return uploadEach(files, '/files/upload', onProgress)
+}
+
+/** 图库入口：后端会拒绝非图片并说明去哪传 */
+export async function uploadImages(
+  files: File[],
+  onProgress?: (percent: number) => void
+): Promise<UploadResult> {
+  return uploadEach(files, '/images/upload', onProgress)
+}
+
+async function uploadEach(
+  files: File[],
+  endpoint: string,
+  onProgress?: (percent: number) => void
+): Promise<UploadResult> {
+  const uploaded: AssetDto[] = []
+  const failed: UploadFailure[] = []
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i]
+    try {
+      const blockMd5 = await computeBlockMd5(file)
+      const form = new FormData()
+      form.append('file', file, file.name)
+      form.append('blockMd5', JSON.stringify(blockMd5))
+
+      const res = await http.post<UploadResult>(endpoint, form, {
+        onUploadProgress: (event) => {
+          if (!onProgress) return
+          const total = event.total ?? 0
+          const withinFile = total > 0 ? (event.loaded / total) * 100 : 0
+          onProgress(Math.min(100, Math.round(((i + withinFile / 100) / files.length) * 100)))
+        }
+      })
+      uploaded.push(...res.data.uploaded)
+      failed.push(...res.data.failed)
+    } catch (err) {
+      failed.push({
+        name: file.name,
+        reason: err instanceof Error ? err.message : String(err)
+      })
     }
-  })
-  return res.data
+  }
+
+  onProgress?.(100)
+  return { uploaded, failed }
 }
 
 /** PATCH /api/files/{id} */

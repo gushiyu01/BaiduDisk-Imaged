@@ -1,0 +1,44 @@
+name = "picman"
+main = "src/index.ts"
+compatibility_date = "2025-09-23"
+
+# 前端构建产物直接由 Worker 托管：同源、无 CORS、一次部署
+# 构建命令：cd ../../frontend && npm run build
+[assets]
+directory = "../../frontend/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+# /api/* 交给 Worker 代码，其余走静态资源
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "picman"
+# 由 deploy/pnpm 脚本创建后回填；见云部署说明
+database_id = "20e33558-23a0-47dd-881a-9f09f8e649de"
+migrations_dir = "migrations"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "db614af9a5ad41fcb9ab9c2941bb9ad8"
+
+# 百度令牌的串行化：refresh_token 是一次性的，多 isolate 并发刷新会互相作废，
+# 所以令牌读写全部收敛到单个 Durable Object 实例里
+[[durable_objects.bindings]]
+name = "TOKEN_DO"
+class_name = "BaiduTokenObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BaiduTokenObject"]
+
+[vars]
+BAIDU_BASE_DIR = "/apps/picman"
+PICMAN_SESSION_HOURS = "168"
+
+# 密钥不写在这里，用 `wrangler secret put` 下发：
+#   BAIDU_DISK_APP_KEY / BAIDU_DISK_SECRET_KEY / BAIDU_DISK_APP_ID
+# 本地开发放 worker/.dev.vars（已 gitignore）
+
+[observability]
+enabled = true

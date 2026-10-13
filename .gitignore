@@ -26,3 +26,12 @@ verify-output/
 *.iml
 .DS_Store
 Thumbs.db
+
+# ---- Cloudflare Workers ----
+cloudflare/worker/node_modules/
+cloudflare/worker/.wrangler/
+cloudflare/worker/dist/
+# wrangler 的本地密钥文件，等价于 .env，绝不能入库
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
