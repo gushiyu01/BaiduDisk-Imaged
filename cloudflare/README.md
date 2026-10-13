@@ -110,32 +110,77 @@ POST /api/baidu/import-refresh-token   { "refreshToken": "122.xxx" }
 
 ## 部署
 
+### 一条命令（推荐）
+
+```bash
+git clone <本仓库> && cd mobile
+npm --prefix cloudflare/worker install
+
+export CLOUDFLARE_API_TOKEN=你的Token      # 需要 D1 / Workers / KV 权限
+export CLOUDFLARE_ACCOUNT_ID=你的账户ID
+export HTTPS_PROXY=http://127.0.0.1:7897   # 国内必须，直连 api.cloudflare.com 会被阻断
+
+node cloudflare/deploy.mjs
+```
+
+脚本会把整条链路跑完，而且**可重复执行**（已存在的资源复用，不会重建）：
+
+1. 校验凭证，看不到指定账户会直接报错并列出实际可见的账户
+2. 创建 D1 `picman` 与 KV `picman-cache`（已存在则复用），把 id 回填进 `wrangler.toml`
+3. 初始化 D1 表结构
+4. 构建前端（Worker 的静态资源绑定要用）
+5. 从 `.dev.vars` → 项目 `.env` → 用户主目录 `.env` 里找百度凭证并下发为 secret
+6. 部署并打印访问地址
+
+百度凭证没找到时会跳过并提示，之后可以手动补：
+
+```bash
+cd cloudflare/worker
+npx wrangler secret put BAIDU_DISK_APP_KEY
+npx wrangler secret put BAIDU_DISK_SECRET_KEY
+```
+
+### 手动分步
+
+<details>
+<summary>不想用脚本的话，展开看原始步骤</summary>
+
 ```bash
 cd cloudflare/worker
 npm install
 
-# 1. 登录（或直接用 API Token）
 export CLOUDFLARE_API_TOKEN=你的Token
 export CLOUDFLARE_ACCOUNT_ID=你的账户ID
-npx wrangler login          # 或者用上面的环境变量免登录
 
-# 2. 建资源，把返回的 id 填进 wrangler.toml
+# 建资源，把返回的 id 填进 wrangler.toml
 npx wrangler d1 create picman
 npx wrangler kv namespace create CACHE
 
-# 3. 建表
+# 建表
 npx wrangler d1 execute picman --remote --file=./src/db/schema.sql
 
-# 4. 下发百度凭证（不要写进 wrangler.toml）
+# 下发百度凭证（不要写进 wrangler.toml）
 npx wrangler secret put BAIDU_DISK_APP_KEY
 npx wrangler secret put BAIDU_DISK_SECRET_KEY
 
-# 5. 构建前端 + 部署
+# 构建前端 + 部署
 cd ../../frontend && npm ci && npm run build && cd ../cloudflare/worker
 npx wrangler deploy
 ```
 
-首次访问站点会引导你创建管理员账号（没有内置默认口令），然后到「百度网盘」页完成 OAuth 授权。
+</details>
+
+### 部署之后
+
+1. 打开 `https://picman.<你的子域名>.workers.dev`，按引导创建管理员账号（没有内置默认口令）
+2. 到「百度网盘」页点「开始授权」，走一遍 OAuth
+3. 点「同步索引」把网盘里的文件导入
+
+**绑自定义域名**：控制台 → Workers & Pages → picman → Settings → Domains & Routes → Add custom domain。
+绑之前要先把域名托管到 Cloudflare 并加好 DNS 记录，否则域名不解析。
+
+> **国内访问提醒**：`*.workers.dev` 在国内直连会被阻断（TCP 连不上，走代理才通）。
+> 想让它在国内能直接打开，得绑一个走 Cloudflare 且线路可用的自有域名。
 
 ### 本地开发
 
