@@ -1,0 +1,28 @@
+{
+  "name": "picman-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "PicMan · 百度网盘个人图片管理器前端",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "axios": "^1.20.0",
+    "element-plus": "^2.14.7",
+    "pinia": "^4.0.3",
+    "vue": "^3.5.43",
+    "vue-router": "^5.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "typescript": "~5.9",
+    "vite": "^8.3.4",
+    "vue-tsc": "^3.3.13"
+  }
+}

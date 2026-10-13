@@ -1,0 +1,109 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    image: picman-backend:1.0.0
+    container_name: picman-backend
+    restart: unless-stopped
+    environment:
+      # ---- 数据库：sqlite（默认）或 mysql ----
+      # 切 mysql 要配合 PICMAN_DB_MODE=mysql 与 --profile mysql 一起用，
+      # 已有数据请先按 docs/MYSQL.md 迁移，直接切库标签和收藏不会过去
+      SPRING_PROFILES_ACTIVE: ${PICMAN_DB_MODE:-sqlite}
+      PICMAN_MYSQL_HOST: ${PICMAN_MYSQL_HOST:-mysql}
+      PICMAN_MYSQL_PORT: ${PICMAN_MYSQL_PORT:-3306}
+      PICMAN_MYSQL_DB: ${PICMAN_MYSQL_DB:-picman}
+      PICMAN_MYSQL_USER: ${PICMAN_MYSQL_USER:-picman}
+      PICMAN_MYSQL_PASSWORD: ${PICMAN_MYSQL_PASSWORD:-}
+      # ---- 百度网盘开放平台凭证（必填，来自应用详情页「应用凭证」）----
+      BAIDU_DISK_APP_ID: ${BAIDU_DISK_APP_ID:?请在 .env 中设置 BAIDU_DISK_APP_ID}
+      BAIDU_DISK_APP_KEY: ${BAIDU_DISK_APP_KEY:?请在 .env 中设置 BAIDU_DISK_APP_KEY}
+      BAIDU_DISK_SECRET_KEY: ${BAIDU_DISK_SECRET_KEY:?请在 .env 中设置 BAIDU_DISK_SECRET_KEY}
+      # ---- 存储 ----
+      PICMAN_DB_PATH: /data/picman.db
+      PICMAN_CACHE_DIR: /data/cache
+      # ---- 图库在网盘上的根目录 ----
+      BAIDU_BASE_DIR: ${BAIDU_BASE_DIR:-/apps/picman}
+      # ---- 会话 ----
+      # 不设则首次启动自动生成并存入数据库；多实例部署必须显式指定同一个值
+      PICMAN_JWT_SECRET: ${PICMAN_JWT_SECRET:-}
+      PICMAN_SESSION_HOURS: ${PICMAN_SESSION_HOURS:-168}
+      # 走 HTTPS 时设为 true，让会话 Cookie 带上 Secure
+      PICMAN_COOKIE_SECURE: ${PICMAN_COOKIE_SECURE:-false}
+      # ---- 缩略图 ----
+      PICMAN_THUMB_SIZE: ${PICMAN_THUMB_SIZE:-400}
+      # ---- 上传 ----
+      BAIDU_SLICE_SIZE: ${BAIDU_SLICE_SIZE:-4194304}
+      # ---- SSRF 防护：允许直连的下载主机后缀 ----
+      PICMAN_DLINK_ALLOWLIST: ${PICMAN_DLINK_ALLOWLIST:-baidupcs.com,baidu.com,baidubce.com,bdstatic.com,pcs.baidu.com}
+    volumes:
+      - picman-data:/data
+    # 只对宿主机暴露，生产环境由前端的 nginx 反代；调试时可直接访问
+    ports:
+      - "${PICMAN_BACKEND_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks:
+      - picman
+
+  frontend:
+    build:
+      context: ./frontend
+    image: picman-frontend:1.0.0
+    container_name: picman-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${PICMAN_HTTP_PORT:-8088}:80"
+    networks:
+      - picman
+
+  # 可选：只在 PICMAN_DB_MODE=mysql 时用，用 --profile mysql 启动
+  #   docker compose --profile mysql up -d
+  # 刻意不写进 backend 的 depends_on：没启用这个 profile 时 compose 会因为
+  # 依赖一个未启用的服务而报错。backend 有 restart: unless-stopped，
+  # MySQL 起得慢它会自己重试连上。
+  mysql:
+    image: mysql:8.0
+    container_name: picman-mysql
+    profiles: ["mysql"]
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      # 布尔位与索引列依赖严格模式下的明确类型，别关掉
+      - --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: ${PICMAN_MYSQL_ROOT_PASSWORD:?启用 mysql profile 时请在 .env 设置 PICMAN_MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${PICMAN_MYSQL_DB:-picman}
+      MYSQL_USER: ${PICMAN_MYSQL_USER:-picman}
+      MYSQL_PASSWORD: ${PICMAN_MYSQL_PASSWORD:?启用 mysql profile 时请在 .env 设置 PICMAN_MYSQL_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - picman-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${PICMAN_MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks:
+      - picman
+
+volumes:
+  # 数据库与缩略图缓存都落在这里，容器重建不会丢
+  picman-data:
+    driver: local
+  # MySQL 数据（只在 mysql profile 下创建）
+  picman-mysql:
+    driver: local
+
+networks:
+  picman:
+    driver: bridge

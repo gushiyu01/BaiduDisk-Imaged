@@ -1,0 +1,9 @@
+target/
+data/
+logs/
+*.db
+*.db-shm
+*.db-wal
+.git
+.idea
+*.iml

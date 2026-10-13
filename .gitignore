@@ -1,0 +1,28 @@
+# ---- 密钥与本地数据，绝不入库 ----
+.env
+.env.local
+*.db
+*.db-shm
+*.db-wal
+
+# ---- 后端 ----
+backend/target/
+backend/data/
+backend/logs/
+backend/verify-output/
+
+# ---- 前端 ----
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ---- 验证脚本产物 ----
+scripts/.baidu-token.json
+verify-output/
+
+# ---- 编辑器 ----
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

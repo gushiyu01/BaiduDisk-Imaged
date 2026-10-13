@@ -1,0 +1,19 @@
+# SQLite 配置档（默认）。
+# 有了这个文件，「不设任何 profile」和「显式指定 sqlite」的行为完全一致，
+# 也让 docker-compose 里的 PICMAN_DB_MODE 开关有对应的配置档可切。
+spring:
+  datasource:
+    url: jdbc:sqlite:${PICMAN_DB_PATH:./data/picman.db}
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      # SQLite 只有一个写者，连接池开大只会互相抢锁
+      maximum-pool-size: 5
+      minimum-idle: 1
+      pool-name: picman-db
+      connection-init-sql: PRAGMA foreign_keys = ON
+      connection-timeout: 15000
+  sql:
+    init:
+      mode: always
+      continue-on-error: false
+      schema-locations: classpath:schema.sql

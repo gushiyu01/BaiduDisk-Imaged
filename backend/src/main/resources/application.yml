@@ -1,0 +1,83 @@
+server:
+  port: 8080
+  shutdown: graceful
+  tomcat:
+    # 大图上传/下载不要过早断开
+    connection-timeout: 60s
+    max-swallow-size: -1
+  compression:
+    enabled: true
+    mime-types: application/json,text/html,text/css,application/javascript
+    # 图片本身已是压缩格式，不走 gzip
+    min-response-size: 2048
+
+spring:
+  application:
+    name: picman
+  datasource:
+    # 由 AppProperties 在启动时保证文件存在；路径通过环境变量覆盖
+    url: jdbc:sqlite:${PICMAN_DB_PATH:./data/picman.db}
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      pool-name: picman-db
+      connection-init-sql: PRAGMA foreign_keys = ON
+      connection-timeout: 15000
+  sql:
+    init:
+      mode: always
+      continue-on-error: false
+      schema-locations: classpath:schema.sql
+  servlet:
+    multipart:
+      # 单文件上限 512MB，够放手机原片
+      max-file-size: 512MB
+      max-request-size: 1024MB
+      file-size-threshold: 2MB
+  mvc:
+    async:
+      request-timeout: 300000
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+logging:
+  level:
+    root: INFO
+    com.zcode.picman: INFO
+    org.springframework.jdbc.core: WARN
+
+management:
+  endpoints:
+    enabled-by-default: false
+  endpoint:
+    health:
+      enabled: true
+
+picman:
+  # 管理员会话令牌签名密钥；留空则首次启动自动生成并写入数据库
+  jwt-secret: ${PICMAN_JWT_SECRET:}
+  session-hours: ${PICMAN_SESSION_HOURS:168}
+  # 图片基础目录（网盘路径）。实测本应用无 /apps 沙箱限制，可改成任意目录
+  base-dir: ${BAIDU_BASE_DIR:/apps/picman}
+  db-path: ${PICMAN_DB_PATH:./data/picman.db}
+  cache-dir: ${PICMAN_CACHE_DIR:./data/cache}
+  # 缩略图边长（像素）
+  thumb-size: ${PICMAN_THUMB_SIZE:400}
+  # 允许访问的 dlink 主机后缀，逗号分隔，防 SSRF
+  dlink-host-allowlist: ${PICMAN_DLINK_ALLOWLIST:baidupcs.com,baidu.com,baidubce.com,bdstatic.com,pcs.baidu.com}
+  cookie-secure: ${PICMAN_COOKIE_SECURE:false}
+
+baidu:
+  app-key: ${BAIDU_DISK_APP_KEY:}
+  secret-key: ${BAIDU_DISK_SECRET_KEY:}
+  app-id: ${BAIDU_DISK_APP_ID:}
+  sign-key: ${BAIDU_DISK_SIGN_KEY:}
+  # 上传分片大小（字节）。普通用户 4MB，会员可调大，但调大后超限会报 31364
+  slice-size: ${BAIDU_SLICE_SIZE:4194304}
+  # 分片上传域名。官方要求通过「获取上传域名」动态取得，实测 d.pcs.baidu.com 可直接用
+  upload-host: ${BAIDU_UPLOAD_HOST:https://d.pcs.baidu.com}
+  connect-timeout-ms: 10000
+  read-timeout-ms: 120000
