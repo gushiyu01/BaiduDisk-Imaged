@@ -3,6 +3,7 @@ import type { Repo, AssetRow } from '../db/repo'
 import type { BaiduPanClient } from '../baidu/client'
 import { bestThumbUrl } from '../baidu/dto'
 import { detectImageMime, OCTET_STREAM } from '../support/mime'
+import { HEADER_PROBE_BYTES, parseImageSize } from '../support/image-size'
 import { ApiException, BaiduPanException } from '../support/errors'
 import { ERRNO } from '../support/errno'
 
@@ -61,6 +62,12 @@ export async function getThumbnail(
     if (data.length > 0) {
       await env.CACHE.put(key, data, { expirationTtl: KV_TTL_SECONDS })
       await repo.updateThumbSource(row.id, 'BAIDU')
+      // 百度不保证返回宽高（实测 extra=1 时有时无），缩略图又是缩放过的，
+      // 所以单独读一次原图头部补尺寸 —— 与 Java 版同样的做法
+      if (row.width === null && meta?.dlink) {
+        const size = await probeRemoteSize(baidu, meta.dlink)
+        if (size) await repo.updateDimensions(row.id, size.width, size.height)
+      }
       return { data, source: 'BAIDU', contentType: detectImageMime(data) }
     }
   }
@@ -127,4 +134,22 @@ export async function clearThumbCache(env: Env): Promise<number> {
     cursor = page.list_complete ? undefined : page.cursor
   } while (cursor)
   return removed
+}
+
+/**
+ * 只取原图前 64KB 解宽高，不下载整张图。
+ * 各格式的尺寸信息都在文件头部，用 Range 请求拿一小段就够。
+ */
+async function probeRemoteSize(
+  baidu: BaiduPanClient,
+  dlink: string,
+): Promise<{ width: number; height: number } | null> {
+  try {
+    const stream = await baidu.openDlink(dlink, `bytes=0-${HEADER_PROBE_BYTES - 1}`)
+    if (!stream.body) return null
+    const head = new Uint8Array(await new Response(stream.body).arrayBuffer())
+    return parseImageSize(head)
+  } catch {
+    return null
+  }
 }
