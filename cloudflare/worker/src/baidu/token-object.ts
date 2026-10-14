@@ -126,26 +126,34 @@ export class BaiduTokenObject implements DurableObject {
     this.requireConfigured()
     const rt = refreshToken.trim()
     if (!rt) throw new BaiduPanException(ERRNO.INVALID_TOKEN, 'refresh_token 不能为空')
-    await this.state.storage.put<StoredToken>(STORAGE_KEY, {
+
+    const placeholder: StoredToken = {
       accessToken: '',
       refreshToken: rt,
       // 置零确保接下来一定走刷新流程
       expiresAt: 0,
       scope: '',
-    })
-    await this.doRefresh({
-      accessToken: '',
-      refreshToken: rt,
-      expiresAt: 0,
-      scope: '',
-    })
+    }
+    await this.state.storage.put<StoredToken>(STORAGE_KEY, placeholder)
+
+    try {
+      await this.doRefresh(placeholder)
+    } catch (err) {
+      // 任何失败都要把临时记录清掉。doRefresh 只在百度明确返回错误时清理，
+      // 网络异常或非 JSON 响应会直接抛出 —— 留下这条临时记录的话，
+      // status() 会一直说「已授权」但拿不到令牌，前端就显示已授权并隐藏授权入口了。
+      await this.state.storage.delete(STORAGE_KEY)
+      throw err
+    }
   }
 
   // ------------------------------------------------------------------ 取用令牌
 
   async status(): Promise<TokenStatus> {
     const rec = await this.state.storage.get<StoredToken>(STORAGE_KEY)
-    if (!rec) return { authorized: false, expiresAt: null, scope: null }
+    // accessToken 为空的一律视为未授权：正常流程里 persist() 一定会写进非空令牌，
+    // 只有导入失败留下的临时记录才会是空的 —— 兜住这种情况，不让它显示成「已授权」
+    if (!rec || !rec.accessToken) return { authorized: false, expiresAt: null, scope: null }
     return { authorized: true, expiresAt: rec.expiresAt, scope: rec.scope }
   }
 

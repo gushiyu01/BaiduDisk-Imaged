@@ -3,12 +3,8 @@ package com.zcode.picman.repository;
 import com.zcode.picman.domain.UserRow;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
-import org.springframework.jdbc.support.GeneratedKeyHolder;
-import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
-import java.sql.PreparedStatement;
-import java.sql.Statement;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -39,19 +35,19 @@ public class UserRepository {
         return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
     }
 
-    public long insert(String username, String passwordHash) {
-        KeyHolder keyHolder = new GeneratedKeyHolder();
-        jdbc.update(con -> {
-            PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO app_user (username, password_hash, created_at) VALUES (?, ?, ?)",
-                    Statement.RETURN_GENERATED_KEYS);
-            ps.setString(1, username);
-            ps.setString(2, passwordHash);
-            ps.setString(3, Instant.now().toString());
-            return ps;
-        }, keyHolder);
-        Number key = keyHolder.getKey();
-        return key == null ? -1 : key.longValue();
+    /**
+     * 只在还没有任何管理员时插入，返回是否真的插入了。
+     * <p>
+     * 关键在于这是一条原子语句（{@code INSERT ... SELECT ... WHERE NOT EXISTS}）。
+     * 不能写成「先 count 再 insert」—— /api/setup/init 是公开接口，
+     * 两个并发请求会同时看到 0 然后各插一个管理员，首次部署时存在被抢注的风险。
+     */
+    public boolean insertFirstIfEmpty(String username, String passwordHash) {
+        int rows = jdbc.update("""
+                INSERT INTO app_user (username, password_hash, created_at)
+                SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM app_user)
+                """, username, passwordHash, Instant.now().toString());
+        return rows > 0;
     }
 
     public void updatePassword(String username, String passwordHash) {

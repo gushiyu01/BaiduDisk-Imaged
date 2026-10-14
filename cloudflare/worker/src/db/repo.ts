@@ -78,6 +78,25 @@ export class Repo {
       .run()
   }
 
+  /**
+   * 只在还没有任何管理员时插入，返回是否真的插入成功。
+   *
+   * 关键在于这是**一条原子语句**：`INSERT ... SELECT ... WHERE NOT EXISTS`。
+   * 之前的写法是「先 userCount() 再 insert」，两个并发请求会同时看到 0，
+   * 然后各插一个管理员 —— 而 /api/setup/init 是公开接口，
+   * 首次部署时确实存在被并发抢注的风险。
+   */
+  async insertFirstUser(username: string, passwordHash: string): Promise<boolean> {
+    const r = await this.db
+      .prepare(
+        `INSERT INTO app_user (username, password_hash, created_at)
+         SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM app_user)`,
+      )
+      .bind(username, passwordHash, now())
+      .run()
+    return (r.meta?.changes ?? 0) > 0
+  }
+
   // ------------------------------------------------------------------ 配置
 
   async getConfig(key: string): Promise<string | null> {
@@ -269,10 +288,14 @@ export class Repo {
 
   /**
    * 某个网盘目录下已有的全部路径，同步时用来算「已经不在网盘上的」。
-   * LIKE 的转义：SQLite 没有默认转义符，必须显式 ESCAPE。
+   *
+   * LIKE 的转义：SQLite 没有默认转义符，必须显式 ESCAPE；同时目录名里的
+   * %、_、\ 要先转义，否则会被当成通配符 —— 例如目录叫 /apps/a_b，
+   * 不转义就会把 /apps/axb 下的文件也匹配进来，随后被同步逻辑错标成 missing。
+   * 转义规则与 Java 版 AssetRepository.escapeLike 一致。
    */
   async findPathsUnder(baseDir: string): Promise<string[]> {
-    const prefix = `${baseDir.endsWith('/') ? baseDir : `${baseDir}/`}%`
+    const prefix = `${escapeLike(baseDir.endsWith('/') ? baseDir : `${baseDir}/`)}%`
     const r = await this.db
       .prepare("SELECT path FROM file_asset WHERE path LIKE ? ESCAPE '\\'")
       .bind(prefix)
@@ -382,4 +405,12 @@ export class Repo {
 
 export function assetExt(name: string): string {
   return extensionOf(name)
+}
+
+/**
+ * 转义 LIKE 的通配符，配合 SQL 里的 ESCAPE '\' 使用。
+ * 顺序要紧：先转义反斜杠本身，否则后面补进去的反斜杠会被重复转义。
+ */
+function escapeLike(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
 }

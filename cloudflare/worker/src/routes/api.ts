@@ -90,9 +90,6 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
     }
 
     if (path === '/api/setup/init' && method === 'POST') {
-      if ((await db.userCount()) > 0) {
-        return apiError('CONFLICT', '系统已完成初始化，不能再创建管理员', 409)
-      }
       const body = await readJson<{ username?: string; password?: string }>(req)
       const username = (body.username ?? '').trim()
       const password = body.password ?? ''
@@ -105,7 +102,12 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
       if (/^\d+$/.test(password)) {
         throw ApiException.badRequest('密码不能是纯数字')
       }
-      await db.insertUser(username, await hashPassword(password))
+      // 用条件插入而不是「先 count 再 insert」：后者两个并发请求会同时看到 0，
+      // 然后各插一个管理员 —— 这是公开接口，首次部署时确实可能被并发抢注
+      const created = await db.insertFirstUser(username, await hashPassword(password))
+      if (!created) {
+        return apiError('CONFLICT', '系统已完成初始化，不能再创建管理员', 409)
+      }
       return json({ username })
     }
 
@@ -130,7 +132,14 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
     }
 
     if (path === '/api/auth/logout' && method === 'POST') {
-      return noContent()
+      // 必须真的把 Cookie 清掉。只返回 204 的话前端的登录态虽然清了，
+      // 浏览器的 Cookie 还在 —— 刷新页面时 /api/auth/me 照样通过，
+      // 等于「退出后仍保持登录」。Secure 要跟着当前协议走，否则 HTTPS 下清不掉。
+      const secure = url.protocol === 'https:'
+      return new Response(null, {
+        status: 204,
+        headers: { 'Set-Cookie': sessionCookie('', 0, secure) },
+      })
     }
 
     if (path === '/api/auth/me' && method === 'GET') {
