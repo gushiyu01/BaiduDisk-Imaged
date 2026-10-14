@@ -46,7 +46,7 @@ public class MigrateSqliteToMysql {
                               <sqlite.db 路径> <mysql JDBC URL> [用户名] [密码] [--force]
                     例:   java -cp "d:/repository/org/xerial/sqlite-jdbc/3.46.1.3/sqlite-jdbc-3.46.1.3.jar;\\
                     d:/repository/com/mysql/mysql-connector-j/8.3.0/mysql-connector-j-8.3.0.jar" \\
-                              tools/MigrateSqliteToMysql.java ./backend/data/picman.db \\
+                              tools/MigrateSqliteToMysql.java ./self-hosted/self-hosted/backend/data/picman.db \\
                               "jdbc:mysql://127.0.0.1:3306/picman?useUnicode=true&characterEncoding=utf8" root 你的密码
                     """);
             System.exit(2);
