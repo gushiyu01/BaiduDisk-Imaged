@@ -1,9 +1,13 @@
 # PicMan on Cloudflare Workers
 
 把 PicMan 用 Cloudflare 全家桶重新实现的一版，参考 Telegraph-Image 那种「纯边缘、无服务器」的路子。
-和自建版（`backend/` + `frontend/`）功能对应，但**是独立部署、独立数据库**，两者不共享数据。
+和自建版（`self-hosted/`）功能对应，但**是独立部署、独立数据库**，两者不共享数据。
 
 线上地址：`https://picman.gushiyu-picman.workers.dev`（自定义域名可随时在控制台绑）
+
+本目录包含 Worker 代码（`worker/`）、前端（`frontend/`）和一键部署脚本（`deploy.mjs`）。
+`frontend/` 与 `self-hosted/frontend/` 是同一份代码的两份拷贝，改完记得用
+`node tools/check-frontend-sync.mjs` 检查两份是否一致。
 
 ---
 
@@ -164,7 +168,8 @@ npx wrangler secret put BAIDU_DISK_APP_KEY
 npx wrangler secret put BAIDU_DISK_SECRET_KEY
 
 # 构建前端 + 部署
-cd ../../frontend && npm ci && npm run build && cd ../cloudflare/worker
+# 前端在 cloudflare/frontend（与 self-hosted/frontend 是同一份代码的两份拷贝）
+cd ../frontend && npm ci && npm run build && cd ../worker
 npx wrangler deploy
 ```
 

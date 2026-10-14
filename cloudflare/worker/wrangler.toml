@@ -3,9 +3,9 @@ main = "src/index.ts"
 compatibility_date = "2025-09-23"
 
 # 前端构建产物直接由 Worker 托管：同源、无 CORS、一次部署
-# 构建命令：cd ../../frontend && npm run build
+# 构建命令：cd cloudflare/frontend && npm run build
 [assets]
-directory = "../../frontend/dist"
+directory = "../frontend/dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 # /api/* 交给 Worker 代码，其余走静态资源

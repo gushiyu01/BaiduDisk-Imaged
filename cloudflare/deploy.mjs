@@ -32,7 +32,7 @@ import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const WORKER_DIR = join(HERE, 'worker')
-const FRONTEND_DIR = resolve(HERE, '..', 'frontend')
+const FRONTEND_DIR = join(HERE, 'frontend')
 const WRANGLER_TOML = join(WORKER_DIR, 'wrangler.toml')
 
 const D1_NAME = 'picman'
