@@ -33,11 +33,12 @@ public class AuthService {
      * 且密码由使用者自己设定——不提供任何内置默认口令。
      */
     public String initialize(String username, String password) {
-        if (isInitialized()) {
+        validate(username, password);
+        // 交给数据库做原子判断，不要「先 isInitialized() 再 insert」：
+        // 这个接口是公开的，两个并发请求会同时看到「还没初始化」然后各插一个管理员
+        if (!users.insertFirstIfEmpty(username, encoder.encode(password))) {
             throw ApiException.conflict("系统已完成初始化，不能再创建管理员");
         }
-        validate(username, password);
-        users.insert(username, encoder.encode(password));
         return username;
     }
 
@@ -66,9 +67,6 @@ public class AuthService {
         }
         if (newPassword == null || newPassword.length() < MIN_PASSWORD_LENGTH) {
             throw ApiException.badRequest("新密码至少 %d 位".formatted(MIN_PASSWORD_LENGTH));
-        }
-        if (newPassword.matches("^\\d+$")) {
-            throw ApiException.badRequest("新密码不能是纯数字");
         }
         users.updatePassword(username, encoder.encode(newPassword));
     }
