@@ -166,27 +166,7 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
     // ---------------- 百度授权 ----------------
 
     if (path === '/api/baidu/status' && method === 'GET') {
-      const status = await client.tokenStore.status()
-      let accountName: string | null = null
-      let uk: string | null = null
-      if (status.authorized) {
-        try {
-          const info = await client.uinfo()
-          accountName = info.netdisk_name || info.baidu_name || null
-          uk = info.uk === undefined ? null : String(info.uk)
-        } catch {
-          // 账号名只是展示，取不到不能让整个状态接口失败
-        }
-      }
-      return json({
-        configured: !!(env.BAIDU_DISK_APP_KEY?.trim() && env.BAIDU_DISK_SECRET_KEY?.trim()),
-        authorized: status.authorized,
-        expiresAt: status.expiresAt ? new Date(status.expiresAt).toISOString() : null,
-        scope: status.scope,
-        accountName,
-        uk,
-        baseDir: baseDir(env),
-      })
+      return json(await baiduStatus(env, client))
     }
 
     if (path === '/api/baidu/authorize-url' && method === 'GET') {
@@ -195,12 +175,13 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
 
     if (path === '/api/baidu/token' && method === 'POST') {
       const body = await readJson<{ code?: string }>(req)
-      const status = await client.tokenStore.exchangeCode(body.code ?? '')
-      return json(status)
+      await client.tokenStore.exchangeCode(body.code ?? '')
+      return json(await baiduStatus(env, client))
     }
 
     if (path === '/api/baidu/refresh' && method === 'POST') {
-      return json(await client.tokenStore.refresh())
+      await client.tokenStore.refresh()
+      return json(await baiduStatus(env, client))
     }
 
     if (path === '/api/baidu/disconnect' && method === 'POST') {
@@ -216,8 +197,8 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
      */
     if (path === '/api/baidu/import-refresh-token' && method === 'POST') {
       const body = await readJson<{ refreshToken?: string }>(req)
-      const status = await client.tokenStore.importRefreshToken(body.refreshToken ?? '')
-      return json(status)
+      await client.tokenStore.importRefreshToken(body.refreshToken ?? '')
+      return json(await baiduStatus(env, client))
     }
 
     if (path === '/api/baidu/quota' && method === 'GET') {
@@ -686,4 +667,36 @@ async function diagnose(env: Env, db: Repo, client: BaiduPanClient) {
   const fail = checks.filter((c) => c.status === 'FAIL').length
   const skip = checks.filter((c) => c.status === 'SKIP').length
   return { checks, summary: `${pass} 项通过，${fail} 项失败，${skip} 项跳过` }
+}
+
+/**
+ * 组装完整的百度授权状态。
+ *
+ * 前端会用返回值**整体替换** status 对象，所以改变授权状态的接口
+ * （/token、/refresh、/import-refresh-token）也必须返回这个完整结构，
+ * 不能只回 TokenStatus —— 否则界面上「后端凭证配置 / 百度账号 / uk / 基础目录」
+ * 会一起变成空，看起来像是凭证丢了。
+ */
+async function baiduStatus(env: Env, client: BaiduPanClient) {
+  const status = await client.tokenStore.status()
+  let accountName: string | null = null
+  let uk: string | null = null
+  if (status.authorized) {
+    try {
+      const info = await client.uinfo()
+      accountName = info.netdisk_name || info.baidu_name || null
+      uk = info.uk === undefined ? null : String(info.uk)
+    } catch {
+      // 账号名只是展示，取不到不能让整个状态接口失败
+    }
+  }
+  return {
+    configured: !!(env.BAIDU_DISK_APP_KEY?.trim() && env.BAIDU_DISK_SECRET_KEY?.trim()),
+    authorized: status.authorized,
+    expiresAt: status.expiresAt ? new Date(status.expiresAt).toISOString() : null,
+    scope: status.scope,
+    accountName,
+    uk,
+    baseDir: baseDir(env),
+  }
 }
