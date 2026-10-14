@@ -364,8 +364,17 @@ onMounted(async () => {
       <template #default>
         <div class="picman-alert-body picman-alert-column">
           <span>
-            需要配置 <code>BAIDU_DISK_APP_KEY</code> 与 <code>BAIDU_DISK_SECRET_KEY</code>
-            （值来自百度网盘开放平台「应用凭证」）。两种部署方式设置位置不同：
+            需要配置 <code>BAIDU_DISK_APP_KEY</code> 与 <code>BAIDU_DISK_SECRET_KEY</code>。
+            先在
+            <a
+              class="picman-alert-link"
+              href="https://pan.baidu.com/union/console/applist"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              百度网盘开放平台 → 应用列表
+            </a>
+            里创建应用，然后到「应用详情 → 应用凭证」取这两个值。设置位置按部署方式不同：
           </span>
           <span>
             · <strong>Cloudflare 版</strong>：在 <code>cloudflare/worker</code> 下执行
@@ -689,6 +698,16 @@ onMounted(async () => {
 .picman-alert-column {
   flex-direction: column;
   align-items: flex-start;
+}
+
+/* 提示里的外链：报错时用户最需要的就是「去哪申请凭证」 */
+.picman-alert-link {
+  color: var(--el-color-primary);
+  text-decoration: underline;
+}
+
+.picman-alert-link:hover {
+  opacity: 0.8;
 }
 
 .picman-steps {

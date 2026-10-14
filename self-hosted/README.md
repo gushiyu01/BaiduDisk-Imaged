@@ -19,6 +19,7 @@
 git clone <本仓库> picman && cd picman
 cp .env.example .env
 # 编辑 .env，至少填入百度网盘开放平台的三个凭证
+#   获取位置：https://pan.baidu.com/union/console/applist → 应用列表 → 点开应用 → 应用凭证
 docker compose up -d --build
 ```
 
@@ -35,7 +36,7 @@ docker compose up -d --build
 
 | 变量 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `BAIDU_DISK_APP_ID` | ✅ | — | 开放平台应用详情页的 AppID |
+| `BAIDU_DISK_APP_ID` | ✅ | — | AppID，[控制台](https://pan.baidu.com/union/console/applist) 应用详情页可见 |
 | `BAIDU_DISK_APP_KEY` | ✅ | — | AppKey（OAuth 的 `client_id`） |
 | `BAIDU_DISK_SECRET_KEY` | ✅ | — | SecretKey |
 | `PICMAN_DB_MODE` | | `sqlite` | `sqlite` 或 `mysql`，见下方「换成 MySQL」 |
