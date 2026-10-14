@@ -50,7 +50,7 @@ java -jar picman.jar
 
 ## 二、代码改了哪 6 处
 
-都集中在 [`DbDialect`](../backend/src/main/java/com/zcode/picman/support/DbDialect.java)，
+都集中在 [`DbDialect`](../self-hosted/backend/src/main/java/com/zcode/picman/support/DbDialect.java)，
 仓储层只调用方法，不再出现任何方言关键字。
 
 | 位置 | SQLite | MySQL | 为什么必须分叉 |
@@ -107,7 +107,7 @@ Windows 下 classpath 分隔符是 `;`，Linux/macOS 是 `:`。实际例子：
 ```bash
 java -cp "d:/repository/org/xerial/sqlite-jdbc/3.46.1.3/sqlite-jdbc-3.46.1.3.jar;d:/repository/com/mysql/mysql-connector-j/8.3.0/mysql-connector-j-8.3.0.jar" \
      tools/MigrateSqliteToMysql.java \
-     ./backend/data/picman.db \
+     ./self-hosted/backend/data/picman.db \
      "jdbc:mysql://127.0.0.1:3306/picman?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai" \
      root 你的密码
 ```

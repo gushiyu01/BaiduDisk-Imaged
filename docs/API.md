@@ -216,8 +216,22 @@ blob 会强制先把整个文件下载完，进度条就没法拖了。浏览器
 
 ### `POST /api/files/upload` / `POST /api/images/upload`
 
-`multipart/form-data`，字段名 `file`，可重复传多个。
+`multipart/form-data`。字段：
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `file` | 是 | 文件本体。**Cloudflare 版一次只能传一个**（多文件请在前端循环）；自建版可重复传多个 |
+| `blockMd5` | 否 | 客户端算好的分片 MD5，JSON 数组，顺序即 partseq。见下 |
+
 `/api/files/upload` 接受任意类型；`/api/images/upload` 只接受图片，非图片会被逐个拒绝并提示去哪传。
+
+**关于 `blockMd5`**：百度要求普通用户按 4MB 切片并提交每片 MD5。
+自建版服务端可以自己算，不传这个字段也完全正常；
+**Cloudflare 版必须由客户端提供** —— Free 套餐的 CPU 预算算不动 4MB 的 MD5
+（实测约三分之一请求超限）。前端为了同时兼容两者会统一带上，两个版本结果一致。
+
+传了不合法的值会被忽略并回退到服务端计算；片数与文件大小不符会返回 `31363`。
+伪造 MD5 不会产生损坏的文件 —— `superfile2` 会返回分片的真实 MD5，服务端会比对，对不上直接失败。
 
 响应 `200`：`{ "uploaded": [ AssetDto ], "failed": [ { "name":"a.jpg", "reason":"..." } ] }`
 错误 `503`（未授权）、`507`（网盘容量不足，百度 errno -10）。
