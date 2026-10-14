@@ -4,12 +4,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
 import { getErrorMessage } from '../api/client'
+import ChangePasswordDialog from './ChangePasswordDialog.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 
 const loggingOut = ref(false)
+const passwordVisible = ref(false)
 
 const activePath = computed(() => route.path)
 
@@ -76,6 +78,7 @@ async function handleLogout(): Promise<void> {
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item @click="router.push('/baidu')">百度网盘授权</el-dropdown-item>
+            <el-dropdown-item @click="passwordVisible = true">修改密码</el-dropdown-item>
               <el-dropdown-item divided :disabled="loggingOut" @click="handleLogout">
                 退出登录
               </el-dropdown-item>
@@ -92,6 +95,8 @@ async function handleLogout(): Promise<void> {
         </el-button>
       </div>
     </div>
+
+    <ChangePasswordDialog v-model="passwordVisible" />
   </header>
 </template>
 

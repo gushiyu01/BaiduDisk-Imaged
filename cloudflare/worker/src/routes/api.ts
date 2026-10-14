@@ -148,10 +148,14 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
       if (next.length < MIN_PASSWORD_LENGTH) {
         throw ApiException.badRequest(`新密码至少 ${MIN_PASSWORD_LENGTH} 位`)
       }
-      await db.putConfig(`user.password.${username}`, await hashPassword(next))
-      // 用户表只有一行，直接覆盖
+      if (/^\d+$/.test(next)) {
+        throw ApiException.badRequest('新密码不能是纯数字')
+      }
+      // 只算一次。PBKDF2 是重操作，之前这里调了两次 —— 既浪费 CPU，
+      // 又因为两次的盐不同而算出两个不同的哈希，其中一个被写进了配置表当垃圾数据
+      const hash = await hashPassword(next)
       await env.DB.prepare('UPDATE app_user SET password_hash = ? WHERE username = ?')
-        .bind(await hashPassword(next), username)
+        .bind(hash, username)
         .run()
       return noContent()
     }
