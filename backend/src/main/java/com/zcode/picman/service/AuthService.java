@@ -67,6 +67,9 @@ public class AuthService {
         if (newPassword == null || newPassword.length() < MIN_PASSWORD_LENGTH) {
             throw ApiException.badRequest("新密码至少 %d 位".formatted(MIN_PASSWORD_LENGTH));
         }
+        if (newPassword.matches("^\\d+$")) {
+            throw ApiException.badRequest("新密码不能是纯数字");
+        }
         users.updatePassword(username, encoder.encode(newPassword));
     }
 

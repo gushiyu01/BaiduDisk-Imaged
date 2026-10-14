@@ -32,6 +32,12 @@ export interface AuthUser {
 
 export type SetupInitResponse = AuthUser
 
+/** POST /api/auth/password 请求体 */
+export interface ChangePasswordRequest {
+  oldPassword: string
+  newPassword: string
+}
+
 /** POST /api/auth/login 请求体 */
 export interface LoginRequest {
   username: string

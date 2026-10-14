@@ -364,11 +364,18 @@ onMounted(async () => {
       <template #default>
         <div class="picman-alert-body picman-alert-column">
           <span>
-            请在后端服务的运行环境中设置环境变量
-            <code>BAIDU_DISK_APP_KEY</code> 与 <code>BAIDU_DISK_SECRET_KEY</code>
-            （值来自百度网盘开放平台「应用凭证」），然后重启后端服务。
+            需要配置 <code>BAIDU_DISK_APP_KEY</code> 与 <code>BAIDU_DISK_SECRET_KEY</code>
+            （值来自百度网盘开放平台「应用凭证」）。两种部署方式设置位置不同：
           </span>
-          <span>配置完成后点击「刷新状态」，即可进行授权与同步操作。</span>
+          <span>
+            · <strong>Cloudflare 版</strong>：在 <code>cloudflare/worker</code> 下执行
+            <code>npx wrangler secret put BAIDU_DISK_APP_KEY</code>（SecretKey 同理），
+            下发后立即生效；或直接重跑 <code>node cloudflare/deploy.mjs</code>。
+          </span>
+          <span>
+            · <strong>自建版</strong>：在 <code>.env</code> 里配置后<strong>重启后端服务</strong>。
+          </span>
+          <span>配置完成后点击右上角「刷新状态」，即可进行授权与同步操作。</span>
         </div>
       </template>
     </el-alert>
