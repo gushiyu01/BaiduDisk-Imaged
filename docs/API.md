@@ -254,6 +254,19 @@ blob 会强制先把整个文件下载完，进度条就没法拖了。浏览器
 { "scanned": 128, "added": 5, "updated": 3, "removed": 0, "failed": 0, "elapsedMs": 2140 }
 ```
 
+**同步可能是分批的。** 响应里可能带 `processed` 与 `nextOffset` 两个字段：
+
+```json
+{ "scanned": 128, "added": 5, "updated": 3, "removed": 0, "failed": 0, "elapsedMs": 980,
+  "processed": 30, "nextOffset": 30 }
+```
+
+`nextOffset` 为 `null`、或响应里没有这两个字段，都表示同步已完整跑完；否则要把
+`nextOffset` 作为请求体的 `offset` 再调一次，直到它变成 `null`。分批时每次调用都会
+重新扫描目录，`added` / `updated` / `removed` / `failed` 是本次调用的增量，累加才是
+整次同步的结果；`removed`（缺失标记）只在最后一轮返回。前端已按这个协议自动续接，
+手写调用时才需要注意。
+
 ---
 
 ## 4. 标签

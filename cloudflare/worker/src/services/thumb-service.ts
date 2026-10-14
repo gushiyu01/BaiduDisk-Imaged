@@ -39,6 +39,19 @@ function cacheKey(row: AssetRow): string {
   return `thumb:${row.id}:${version}`
 }
 
+/**
+ * 写缓存。**失败绝不能让请求失败**：图片已经拿到手了，KV 只是加速层。
+ * Free 套餐每天只有 1000 次写，而且同一个键每秒只允许写 1 次 ——
+ * 图库首次浏览、多标签页同时打开都可能触发，写不进去就当没缓存，下次实时取。
+ */
+async function putCache(env: Env, key: string, data: Uint8Array): Promise<void> {
+  try {
+    await env.CACHE.put(key, data, { expirationTtl: KV_TTL_SECONDS })
+  } catch (err) {
+    console.warn(`缩略图写 KV 缓存失败（${key}），本次直接返回图片`, err)
+  }
+}
+
 export async function getThumbnail(
   env: Env,
   repo: Repo,
@@ -60,7 +73,7 @@ export async function getThumbnail(
   if (thumbUrl) {
     const data = await baidu.fetchThumb(thumbUrl)
     if (data.length > 0) {
-      await env.CACHE.put(key, data, { expirationTtl: KV_TTL_SECONDS })
+      await putCache(env, key, data)
       await repo.updateThumbSource(row.id, 'BAIDU')
       // 百度不保证返回宽高（实测 extra=1 时有时无），缩略图又是缩放过的，
       // 所以单独读一次原图头部补尺寸 —— 与 Java 版同样的做法
@@ -94,7 +107,7 @@ export async function getThumbnail(
   const stream = await baidu.openDlink(meta.dlink, null)
   const data = new Uint8Array(await new Response(stream.body).arrayBuffer())
   if (data.length <= MAX_CACHE_BYTES) {
-    await env.CACHE.put(key, data, { expirationTtl: KV_TTL_SECONDS })
+    await putCache(env, key, data)
   }
   await repo.updateThumbSource(row.id, 'ORIGINAL')
   const contentType = detectImageMime(data)

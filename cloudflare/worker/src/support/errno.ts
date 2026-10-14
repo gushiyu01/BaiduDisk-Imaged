@@ -4,6 +4,13 @@
  */
 export const ERRNO = {
   OK: 0,
+  /**
+   * 本地合成，不是百度返回的码：上游返回空响应、非 JSON，或状态码异常且没有 errno。
+   *
+   * 必须和 NOT_FOUND(-9) 严格区分 —— 把上游故障当成「文件不存在」的话，
+   * 递归扫描会跳过整个目录，同步随后把还在网盘上的文件全部标成「已删除」。
+   */
+  UPSTREAM_ERROR: -1000,
   /** access_token 无效或已过期 */
   INVALID_TOKEN: -6,
   BAD_PATH: -7,
@@ -27,6 +34,7 @@ export const ERRNO = {
 export function describeErrno(errno: number): string {
   switch (errno) {
     case ERRNO.OK: return '成功'
+    case ERRNO.UPSTREAM_ERROR: return '上游服务返回了无法解析的响应（网络故障或服务异常）'
     case ERRNO.INVALID_TOKEN: return '身份验证失败，access_token 无效或已过期'
     case ERRNO.BAD_PATH: return '文件或目录名非法，或无权访问'
     case ERRNO.ALREADY_EXISTS: return '文件已存在'

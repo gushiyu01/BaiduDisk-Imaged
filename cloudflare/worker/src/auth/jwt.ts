@@ -75,13 +75,14 @@ export async function verifyJwt(token: string, secret: string): Promise<SessionP
 /**
  * 取会话签名密钥，没有就生成一个写进 D1 并读回。
  *
- * 为什么读回而不是直接用生成的值：并发冷启动时两个 isolate 可能同时发现
- * 「没有密钥」并各自生成，后写入的会把先写入的覆盖掉。读回能保证两个 isolate
- * 最终用同一个值，否则会出现「刚登录就掉线」。这种竞态窗口只存在于首次启动。
+ * 并发冷启动时两个 isolate 可能同时发现「没有密钥」并各自生成，所以写入必须用
+ * **仅首次插入**的原子操作（putConfigIfAbsent）：先写入者胜出，双方读回同一个值。
+ * 「写完再读」单独用是不够的 —— 覆盖式写入下，请求 A 读回自己的密钥之后，
+ * 请求 B 仍可能把它覆盖掉，A 刚签发的会话立刻失效。
  */
 export async function loadOrCreateJwtSecret(repo: {
   getConfig(key: string): Promise<string | null>
-  putConfig(key: string, value: string): Promise<void>
+  putConfigIfAbsent(key: string, value: string): Promise<void>
 }): Promise<string> {
   const existing = await repo.getConfig(CONFIG_KEY)
   if (existing) return existing
@@ -90,6 +91,6 @@ export async function loadOrCreateJwtSecret(repo: {
   let s = ''
   for (let i = 0; i < random.length; i++) s += String.fromCharCode(random[i])
 
-  await repo.putConfig(CONFIG_KEY, btoa(s))
+  await repo.putConfigIfAbsent(CONFIG_KEY, btoa(s))
   return (await repo.getConfig(CONFIG_KEY)) ?? btoa(s)
 }

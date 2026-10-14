@@ -251,6 +251,8 @@ export interface DeleteAssetResult {
 /** POST /api/images/sync 请求体（可选） */
 export interface SyncRequest {
   dir?: string
+  /** 续接上一轮同步的偏移量；不分批的后端忽略此字段 */
+  offset?: number
 }
 
 /** POST /api/images/sync 响应 */
@@ -261,6 +263,13 @@ export interface SyncResult {
   removed: number
   failed: number
   elapsedMs: number
+  /** 本次调用实际写入索引的文件数（后端不分批时不返回） */
+  processed?: number
+  /**
+   * 还有文件没处理完时为下一轮要传的 offset，全部处理完是 null。
+   * 后端不分批时一次调用同步完，不返回这个字段 —— 前端据此决定是否续接。
+   */
+  nextOffset?: number | null
 }
 
 /* ------------------------------------------------------------------ */

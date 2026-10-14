@@ -156,14 +156,54 @@ const syncDir = ref('')
 const syncing = ref(false)
 const syncResult = ref<SyncResult | null>(null)
 const syncError = ref('')
+/** 续接进度：已处理 / 本轮扫描到的总数（分批同步时用） */
+const syncProcessed = ref(0)
+const syncScanned = ref(0)
+
+const syncPercent = computed(() =>
+  syncScanned.value > 0
+    ? Math.min(99, Math.floor((syncProcessed.value / syncScanned.value) * 100))
+    : 0
+)
+
+/** 续接轮数上限，防止后端异常时无限循环 */
+const MAX_SYNC_ROUNDS = 500
 
 async function doSync(): Promise<void> {
   syncing.value = true
   syncResult.value = null
   syncError.value = ''
+  syncProcessed.value = 0
+  syncScanned.value = 0
+  const dir = syncDir.value.trim()
+  const total: SyncResult = { scanned: 0, added: 0, updated: 0, removed: 0, failed: 0, elapsedMs: 0 }
   try {
-    const dir = syncDir.value.trim()
-    syncResult.value = await syncImages({ dir: dir || undefined })
+    // 同步可能是分批的：后端受单次调用的查询次数限制，每次只处理固定数量的文件，
+    // 用 nextOffset 要求续接；响应里没有 nextOffset 就说明一轮已经同步完。
+    let offset: number | undefined
+    for (let round = 1; ; round++) {
+      const result = await syncImages({
+        dir: dir || undefined,
+        ...(offset === undefined ? {} : { offset })
+      })
+      total.scanned = result.scanned
+      total.added += result.added
+      total.updated += result.updated
+      total.removed += result.removed
+      total.failed += result.failed
+      total.elapsedMs += result.elapsedMs
+      syncResult.value = { ...total }
+
+      const next = result.nextOffset
+      if (typeof next !== 'number' || next <= (offset ?? 0)) break
+      if (round >= MAX_SYNC_ROUNDS) {
+        syncError.value = `同步超过 ${MAX_SYNC_ROUNDS} 轮仍未完成，已中止。再点一次「同步索引」可以接着跑完（已索引的文件只会被更新，不会重复）`
+        return
+      }
+      offset = next
+      syncScanned.value = result.scanned
+      syncProcessed.value = next
+    }
     ElMessage.success('同步完成')
     await imagesStore.fetch().catch(() => undefined)
     await tagsStore.fetchTags().catch(() => undefined)
@@ -171,6 +211,8 @@ async function doSync(): Promise<void> {
     syncError.value = getErrorMessage(err)
   } finally {
     syncing.value = false
+    syncProcessed.value = 0
+    syncScanned.value = 0
   }
 }
 
@@ -486,6 +528,17 @@ onMounted(async () => {
         :description="syncError"
       />
 
+      <div v-if="syncing" class="picman-sync-progress">
+        <el-progress :percentage="syncPercent" :stroke-width="10" :show-text="false" />
+        <span class="picman-step-hint">
+          {{
+            syncScanned > 0
+              ? `已处理 ${syncProcessed} / ${syncScanned} 个文件，正在继续…`
+              : '正在扫描网盘目录…'
+          }}
+        </span>
+      </div>
+
       <template v-if="syncResult">
         <el-descriptions class="picman-result" :column="3" border>
           <el-descriptions-item label="扫描文件">{{ syncResult.scanned }}</el-descriptions-item>
@@ -725,6 +778,13 @@ onMounted(async () => {
 }
 
 .picman-sync-row {
+  margin-bottom: 12px;
+}
+
+.picman-sync-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   margin-bottom: 12px;
 }
 

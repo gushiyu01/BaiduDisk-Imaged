@@ -28,6 +28,22 @@ export interface TagRow {
   cnt?: number
 }
 
+/** 写入 file_asset 需要的字段。同步、上传、体检都走这一套。 */
+export interface AssetUpsert {
+  fsId: string | null
+  path: string
+  name: string
+  size: number
+  kind: string
+  category: number | null
+  width: number | null
+  height: number | null
+  mime: string
+  md5: string | null
+  serverMtime: string | null
+  thumbSource: string
+}
+
 export interface AssetQuery {
   q?: string | null
   tagIds?: number[]
@@ -53,6 +69,29 @@ function orderBy(sort: string | undefined): string {
 function now(): string {
   return new Date().toISOString()
 }
+
+/**
+ * 按 path 幂等写入：已存在时只更新网盘侧字段，favorite / 标签这些本地数据必须保留。
+ * 宽高用 COALESCE 保留旧值：百度经常不返回尺寸，不能因为这次查不到就抹掉已探测到的值。
+ */
+const UPSERT_ASSET_SQL = `INSERT INTO file_asset
+   (fs_id, path, name, size, kind, category, width, height, mime, md5, server_mtime,
+    favorite, thumb_source, missing, indexed_at, updated_at)
+ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?)
+ ON CONFLICT(path) DO UPDATE SET
+   fs_id = excluded.fs_id,
+   name = excluded.name,
+   size = excluded.size,
+   kind = excluded.kind,
+   category = excluded.category,
+   width = COALESCE(excluded.width, file_asset.width),
+   height = COALESCE(excluded.height, file_asset.height),
+   mime = excluded.mime,
+   md5 = excluded.md5,
+   server_mtime = excluded.server_mtime,
+   thumb_source = excluded.thumb_source,
+   missing = 0,
+   updated_at = excluded.updated_at`
 
 export class Repo {
   constructor(private readonly db: D1Database) {}
@@ -112,6 +151,24 @@ export class Repo {
       .prepare(
         `INSERT INTO system_config (config_key, config_val, updated_at) VALUES (?, ?, ?)
          ON CONFLICT(config_key) DO UPDATE SET config_val = excluded.config_val, updated_at = excluded.updated_at`,
+      )
+      .bind(key, value, now())
+      .run()
+  }
+
+  /**
+   * 只在键不存在时写入，已存在则什么都不做。
+   *
+   * 用于「首次启动生成」这类值（当前是 JWT 签名密钥）：调用方先读、读不到再生成，
+   * 最后用这个方法写回。两条并发请求会各自生成一个候选值，但这里只有第一条的写入生效，
+   * 之后双方读回的都是同一个值 —— 而 putConfig 的覆盖语义会让后者赢，
+   * 导致先签发出去的会话立刻验不过（表现为「刚登录就掉线」）。
+   */
+  async putConfigIfAbsent(key: string, value: string): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO system_config (config_key, config_val, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(config_key) DO NOTHING`,
       )
       .bind(key, value, now())
       .run()
@@ -191,51 +248,33 @@ export class Repo {
   // ------------------------------------------------------------------ 文件写入
 
   /**
-   * 按 path 幂等写入。已存在时只更新网盘侧字段，
-   * favorite / 标签这些本地数据必须保留。
-   * 宽高用 COALESCE 保留旧值：百度经常不返回尺寸，不能因为这次查不到就抹掉已探测到的值。
+   * 写入单条（上传完索引一个新文件时用）。
+   *
+   * 同步大目录不要走这里，用 upsertAssets —— 逐条 .run() 每一条都算一次 D1 查询，
+   * Free 套餐每次 Worker 调用只有 50 次，几十个文件就会把预算烧光。
    */
-  async upsertAsset(a: {
-    fsId: string | null
-    path: string
-    name: string
-    size: number
-    kind: string
-    category: number | null
-    width: number | null
-    height: number | null
-    mime: string
-    md5: string | null
-    serverMtime: string | null
-    thumbSource: string
-  }): Promise<void> {
+  async upsertAsset(a: AssetUpsert): Promise<void> {
+    await this.bindUpsert(a).run()
+  }
+
+  /**
+   * 批量写入（同步索引用）。
+   * db.batch 把多条语句一次性提交，省掉逐条的往返，也把「每次调用的查询次数」
+   * 压到可控范围 —— 调用方仍要按批大小切分，见 sync-service 的 UPSERTS_PER_CALL。
+   */
+  async upsertAssets(list: AssetUpsert[]): Promise<void> {
+    if (list.length === 0) return
+    await this.db.batch(list.map((a) => this.bindUpsert(a)))
+  }
+
+  private bindUpsert(a: AssetUpsert) {
     const ts = now()
-    await this.db
-      .prepare(
-        `INSERT INTO file_asset
-           (fs_id, path, name, size, kind, category, width, height, mime, md5, server_mtime,
-            favorite, thumb_source, missing, indexed_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?)
-         ON CONFLICT(path) DO UPDATE SET
-           fs_id = excluded.fs_id,
-           name = excluded.name,
-           size = excluded.size,
-           kind = excluded.kind,
-           category = excluded.category,
-           width = COALESCE(excluded.width, file_asset.width),
-           height = COALESCE(excluded.height, file_asset.height),
-           mime = excluded.mime,
-           md5 = excluded.md5,
-           server_mtime = excluded.server_mtime,
-           thumb_source = excluded.thumb_source,
-           missing = 0,
-           updated_at = excluded.updated_at`,
-      )
+    return this.db
+      .prepare(UPSERT_ASSET_SQL)
       .bind(
         a.fsId, a.path, a.name, a.size, a.kind, a.category, a.width, a.height, a.mime, a.md5,
         a.serverMtime, a.thumbSource, ts, ts,
       )
-      .run()
   }
 
   async updateFsIdAndPath(id: number, fsId: string | null, path: string, name: string): Promise<void> {

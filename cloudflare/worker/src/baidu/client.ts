@@ -35,7 +35,7 @@ const SLICE_SIZE = 4 * 1024 * 1024
 const METAS_BATCH = 100
 const LIST_PAGE = 1000
 /** 递归列目录的硬上限，防止异常数据导致无限翻页 */
-const LIST_MAX_ENTRIES = 50_000
+export const LIST_MAX_ENTRIES = 50_000
 
 function check(errno: number, errmsg: string | undefined, action: string): void {
   if (errno !== ERRNO.OK) {
@@ -55,16 +55,36 @@ function withToken(url: string, token: string): string {
   return `${url}${url.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`
 }
 
+/**
+ * 读取并解析百度返回的 JSON。
+ *
+ * 空响应、非 JSON、以及「状态码不成功又没有 errno」一律归为 **上游故障**
+ * （UPSTREAM_ERROR），绝不能当成 NOT_FOUND —— 递归扫描会跳过「不存在」的目录，
+ * 同步随后把这些目录下的文件全标成已删除，一次 502 就能造成满屏「网盘已删除」。
+ */
 async function readJson<T>(res: Response, what: string): Promise<T> {
   const text = await res.text()
   if (!text.trim()) {
-    throw new BaiduPanException(ERRNO.NOT_FOUND, `${what} 返回空响应（HTTP ${res.status}）`)
+    throw new BaiduPanException(ERRNO.UPSTREAM_ERROR, `${what} 返回空响应（HTTP ${res.status}）`)
   }
+  let parsed: T
   try {
-    return JSON.parse(text) as T
+    parsed = JSON.parse(text) as T
   } catch {
-    throw new BaiduPanException(ERRNO.NOT_FOUND, `${what} 返回非 JSON：${text.slice(0, 200)}`)
+    throw new BaiduPanException(
+      ERRNO.UPSTREAM_ERROR,
+      `${what} 返回非 JSON（HTTP ${res.status}）：${text.slice(0, 200)}`,
+    )
   }
+  // 网关类的 502/504 可能回一段合法 JSON 但没有 errno，这种也不能当成功，
+  // 否则后面会拿 undefined 当错误码去判断
+  if (!res.ok && typeof (parsed as { errno?: unknown }).errno !== 'number') {
+    throw new BaiduPanException(
+      ERRNO.UPSTREAM_ERROR,
+      `${what} 返回 HTTP ${res.status}：${text.slice(0, 200)}`,
+    )
+  }
+  return parsed
 }
 
 export interface RemoteStream {
@@ -157,8 +177,15 @@ export class BaiduPanClient {
   /**
    * 递归列出目录下所有条目（含子目录本身）。
    * 用 BFS 逐层展开，比 search 接口更可预测，也不会被索引延迟影响。
+   *
+   * truncated=true 表示撞到了 LIST_MAX_ENTRIES 上限，也就是**这次扫描不完整**：
+   * 调用方不能拿不完整的清单去判定「哪些文件已从网盘消失」。
+   *
+   * 目录确实不存在（errno -9）时跳过目录本身是对的；但上游故障（UPSTREAM_ERROR）
+   * 必须照常抛出 —— 在那里 continue 等于谎报「这个目录被删了」，
+   * 一次 502 就能让整棵子树被标成已删除。
    */
-  async listRecursive(rootDir: string): Promise<FsEntry[]> {
+  async listRecursive(rootDir: string): Promise<{ entries: FsEntry[]; truncated: boolean }> {
     const result: FsEntry[] = []
     const dirs: string[] = [rootDir]
     while (dirs.length > 0) {
@@ -173,10 +200,10 @@ export class BaiduPanClient {
       for (const child of children) {
         result.push(child)
         if (child.isdir === 1) dirs.push(child.path)
-        if (result.length >= LIST_MAX_ENTRIES) return result
+        if (result.length >= LIST_MAX_ENTRIES) return { entries: result, truncated: true }
       }
     }
-    return result
+    return { entries: result, truncated: false }
   }
 
   async mkdir(path: string): Promise<void> {

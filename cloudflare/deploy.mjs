@@ -226,18 +226,28 @@ async function main() {
 
   // ---- 5. 百度凭证 ----
   step(5, '下发百度凭证')
+  // 按文件头声明的优先级逐层取：进程环境变量 > .dev.vars > 项目 .env > 用户主目录 .env。
+  // 刻意不用 Object.assign 合并成一个大对象 —— 那是「后写的覆盖先写的」，
+  // 数组里最后一个用户目录 .env 反而优先级最高，和文档写的正好相反。
+  // 谁先匹配到就用谁，命中的文件也一并带出来用于打印来源。
   const envFiles = [
     join(WORKER_DIR, '.dev.vars'),
     resolve(HERE, '..', '.env'),
     join(homedir(), '.env'),
-  ]
-  const merged = Object.assign({}, ...envFiles.map(parseEnvFile))
+  ].map((file) => ({ file, values: parseEnvFile(file) }))
+
   const pick = (...names) => {
     for (const n of names) {
-      const v = process.env[n] || merged[n]
-      if (v && v.trim()) return v.trim()
+      const fromProcess = process.env[n]
+      if (fromProcess && fromProcess.trim()) {
+        return { value: fromProcess.trim(), source: '进程环境变量' }
+      }
+      for (const { file, values } of envFiles) {
+        const v = values[n]
+        if (v && v.trim()) return { value: v.trim(), source: file }
+      }
     }
-    return ''
+    return null
   }
   const appKey = pick('BAIDU_DISK_APP_KEY', 'BAIDU_DISK_AKEY')
   const secretKey = pick('BAIDU_DISK_SECRET_KEY')
@@ -247,17 +257,17 @@ async function main() {
     ['BAIDU_DISK_APP_KEY', appKey],
     ['BAIDU_DISK_SECRET_KEY', secretKey],
     ['BAIDU_DISK_APP_ID', appId],
-  ].filter(([, v]) => v)
+  ].filter(([, picked]) => picked)
 
   if (secrets.length === 0) {
     warn('没找到百度凭证，跳过。之后可执行：npx wrangler secret put BAIDU_DISK_APP_KEY')
   } else {
-    for (const [name, value] of secrets) {
-      const r = wrangler(['secret', 'put', name], { input: value, allowFailure: true })
+    for (const [name, picked] of secrets) {
+      const r = wrangler(['secret', 'put', name], { input: picked.value, allowFailure: true })
       if (r.status !== 0) {
         bad(`${name} 下发失败`)
       } else {
-        ok(`${name} 已下发（来源：${process.env[name] ? '环境变量' : 'env 文件'}）`)
+        ok(`${name} 已下发（来源：${picked.source}）`)
       }
     }
   }

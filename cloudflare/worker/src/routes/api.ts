@@ -15,7 +15,7 @@ import {
   sessionCookie,
 } from '../support/http'
 import { ALL_KINDS, KIND_LABELS, extensionOf, isImageFilename, kindOf } from '../support/kinds'
-import { mimeFromFilename } from '../support/mime'
+import { mimeFromFilename, isInlineSafeMime } from '../support/mime'
 import { clearThumbCache, getThumbnail } from '../services/thumb-service'
 import { sync } from '../services/sync-service'
 import {
@@ -275,6 +275,8 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
           return new Response(result.data as unknown as BodyInit, {
             headers: {
               'Content-Type': result.contentType,
+              // 类型来自魔数探测，同样禁掉嗅探
+              'X-Content-Type-Options': 'nosniff',
               'Content-Length': String(result.data.length),
               'X-Thumb-Source': result.source,
               'Cache-Control': 'private, max-age=86400',
@@ -285,14 +287,27 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
         // /raw
         const range = req.headers.get('Range')
         const stream = await client.openDlink(await requireDlink(client, row), range)
+        // 类型只按扩展名表推断，不透传上游的 Content-Type：上游给什么不可控，
+        // 万一是 text/html，这个文件就会在本应用的同源下渲染并执行脚本 ——
+        // 脚本拿着用户的会话可以调用全部管理接口。类型稳定也让浏览器行为可预期。
+        const mime = mimeFromFilename(row.name, extensionOf(row.name))
+        const upstreamMime = stream.contentType
+        // 上游类型只在本身「可安全内联」时才采用，否则一律用扩展名表的值
+        const contentType = upstreamMime && isInlineSafeMime(upstreamMime) ? upstreamMime : mime
+        const wantsDownload =
+          url.searchParams.get('download') === 'true' || url.searchParams.get('download') === '1'
         const headers: Record<string, string> = {
-          'Content-Type': stream.contentType ?? mimeFromFilename(row.name, extensionOf(row.name)),
+          'Content-Type': contentType,
+          // 禁掉嗅探：类型由扩展名定，不让浏览器自己改判成 HTML
+          'X-Content-Type-Options': 'nosniff',
           'Accept-Ranges': 'bytes',
           'Cache-Control': 'private, max-age=300',
         }
         if (stream.contentLength >= 0) headers['Content-Length'] = String(stream.contentLength)
         if (stream.contentRange) headers['Content-Range'] = stream.contentRange
-        if (url.searchParams.get('download') === 'true' || url.searchParams.get('download') === '1') {
+        // 不在内联白名单里的一律强制下载：HTML/SVG 这类顶层打开就能执行脚本，
+        // 只是「查看一个文件」不该等于把应用会话交给它的脚本
+        if (wantsDownload || !isInlineSafeMime(mime)) {
           headers['Content-Disposition'] = contentDisposition(row.name)
         }
         return new Response(stream.body, { status: stream.status, headers })
@@ -311,8 +326,9 @@ export async function handleApi(req: Request, env: Env): Promise<Response> {
     }
 
     if ((isFiles || isImages) && method === 'POST' && path.endsWith('/sync')) {
-      const body = await readJson<{ dir?: string }>(req)
-      return json(await sync(env, db, client, body.dir ?? null))
+      const body = await readJson<{ dir?: string; offset?: number }>(req)
+      const offset = Number.isFinite(body.offset) ? Math.max(0, Math.floor(body.offset as number)) : 0
+      return json(await sync(env, db, client, body.dir ?? null, offset))
     }
 
     if ((isFiles || isImages)) {
@@ -498,7 +514,9 @@ async function renameAsset(
 
   const newPath = `${parentOf(oldPath)}/${name}`
   if (await db.findByPath(newPath)) {
-    return apiError('CONFLICT', `索引里已存在同名文件：${name}`, 409)
+    // 必须抛异常而不是返回 Response：调用方会把这个返回值 json() 一遍，
+    // Response 序列化出来是 {} —— 前端会收到 200 并提示「重命名成功」，实际什么都没做
+    throw ApiException.conflict(`索引里已存在同名文件：${name}`)
   }
 
   await client.rename(oldPath, name)
@@ -571,7 +589,8 @@ async function uploadOne(
       remotePath = `${dir}/${candidate}`
     }
   }
-  return apiError('CONFLICT', `同名文件过多，无法为「${safeName}」找到可用名称`, 409)
+  // 同上：返回值会被外层 json() 包一次，这里只能抛异常
+  throw ApiException.conflict(`同名文件过多，无法为「${safeName}」找到可用名称`)
 }
 
 function numberedName(name: string, n: number): string {

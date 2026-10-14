@@ -33,12 +33,29 @@ export interface TokenStatus {
  * 而刷新失败会让 refresh_token 永久作废、用户必须重新授权。
  * Durable Object 全局单实例，把令牌读写收敛进来就从根上避免了这个问题。
  *
- * 注意：DO 虽然是单线程的，但 `await fetch(...)` 会让出控制权，
- * 所以并发请求依然可能同时走到刷新分支。下面用 refreshing 这个 Promise 做合并，
- * 保证同一时刻只有一个真正的刷新请求在飞。
+ * **还有一个更隐蔽的坑**：DO 虽然是单线程的，但 `await fetch(...)` 会让出控制权，
+ * 所以「刷新中」和「断开授权 / 重新授权」依然会交错 ——
+ * 断开授权后仍在飞的刷新回来会把令牌写回去，表现成状态自动变回「已授权」；
+ * 重新授权也可能被旧刷新的结果覆盖。所以所有会改动令牌的操作都排进一条串行队列，
+ * 按到达顺序依次完成，后到的动作一定赢。
  */
 export class BaiduTokenObject implements DurableObject {
-  private refreshing: Promise<string> | null = null
+  /**
+   * 令牌变更的串行队列。排队的是**整个操作**（包括其中的网络请求），
+   * 这样最终的写入顺序就等于请求到达顺序，不会出现旧刷新的结果盖掉新授权。
+   */
+  private chain: Promise<unknown> = Promise.resolve()
+
+  private serialize<T>(task: () => Promise<T>): Promise<T> {
+    // 前一个任务无论成功还是失败，都要接着跑下一个；
+    // 失败本身照常抛给它自己的调用方
+    const run = this.chain.then(task, task)
+    this.chain = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
+  }
 
   constructor(
     private readonly state: DurableObjectState,
@@ -72,7 +89,7 @@ export class BaiduTokenObject implements DurableObject {
           return Response.json(await this.status())
         }
         case 'POST /clear':
-          await this.state.storage.delete(STORAGE_KEY)
+          await this.clear()
           return Response.json({ ok: true })
         default:
           return Response.json({ error: 'NOT_FOUND' }, { status: 404 })
@@ -104,14 +121,22 @@ export class BaiduTokenObject implements DurableObject {
     if (!code.trim()) {
       throw new BaiduPanException(ERRNO.INVALID_TOKEN, '授权码不能为空')
     }
-    const resp = await this.postToken({
-      grant_type: 'authorization_code',
-      code: code.trim(),
-      client_id: this.env.BAIDU_DISK_APP_KEY,
-      client_secret: this.env.BAIDU_DISK_SECRET_KEY,
-      redirect_uri: 'oob',
+    // 整段进队列：换令牌和随后写回都要跟别的变更操作按顺序发生
+    await this.serialize(async () => {
+      const resp = await this.postToken({
+        grant_type: 'authorization_code',
+        code: code.trim(),
+        client_id: this.env.BAIDU_DISK_APP_KEY,
+        client_secret: this.env.BAIDU_DISK_SECRET_KEY,
+        redirect_uri: 'oob',
+      })
+      await this.persist(resp)
     })
-    await this.persist(resp)
+  }
+
+  /** 清除授权。排队执行，确保正在飞的刷新不会在清除之后把令牌写回去。 */
+  private async clear(): Promise<void> {
+    await this.serialize(() => this.state.storage.delete(STORAGE_KEY))
   }
 
   // ------------------------------------------------------------------ 迁移
@@ -134,17 +159,22 @@ export class BaiduTokenObject implements DurableObject {
       expiresAt: 0,
       scope: '',
     }
-    await this.state.storage.put<StoredToken>(STORAGE_KEY, placeholder)
 
-    try {
-      await this.doRefresh(placeholder)
-    } catch (err) {
-      // 任何失败都要把临时记录清掉。doRefresh 只在百度明确返回错误时清理，
-      // 网络异常或非 JSON 响应会直接抛出 —— 留下这条临时记录的话，
-      // status() 会一直说「已授权」但拿不到令牌，前端就显示已授权并隐藏授权入口了。
-      await this.state.storage.delete(STORAGE_KEY)
-      throw err
-    }
+    // 整段（写临时记录 → 刷新 → 失败清理）都在队列里：清理动作一旦能和别的
+    // 变更操作交错，就可能删掉别人刚写入的新令牌
+    await this.serialize(async () => {
+      await this.state.storage.put<StoredToken>(STORAGE_KEY, placeholder)
+
+      try {
+        await this.doRefresh(placeholder)
+      } catch (err) {
+        // 任何失败都要把临时记录清掉。doRefresh 只在百度明确返回错误时清理，
+        // 网络异常或非 JSON 响应会直接抛出 —— 留下这条临时记录的话，
+        // status() 会一直说「已授权」但拿不到令牌，前端就显示已授权并隐藏授权入口了。
+        await this.state.storage.delete(STORAGE_KEY)
+        throw err
+      }
+    })
   }
 
   // ------------------------------------------------------------------ 取用令牌
@@ -166,15 +196,21 @@ export class BaiduTokenObject implements DurableObject {
     if (!force && rec.expiresAt - Date.now() > REFRESH_WINDOW_MS) {
       return rec.accessToken
     }
-    // 合并并发刷新：同一时刻只允许一个真正的刷新请求
-    if (!this.refreshing) {
-      this.refreshing = this.doRefresh(rec).finally(() => {
-        this.refreshing = null
-      })
-    }
-    return this.refreshing
+    // 刷新排进队列，并且**进队后重新读一次存储**：排队期间可能已经有人刷过、
+    // 或者用户刚断开授权，按最新状态决定是直接拿来用还是真的去刷新
+    return this.serialize(async () => {
+      const fresh = await this.state.storage.get<StoredToken>(STORAGE_KEY)
+      if (!fresh) {
+        throw new BaiduPanException(ERRNO.INVALID_TOKEN, '尚未完成百度网盘授权，请先授权')
+      }
+      if (!force && fresh.expiresAt - Date.now() > REFRESH_WINDOW_MS) {
+        return fresh.accessToken
+      }
+      return this.doRefresh(fresh)
+    })
   }
 
+  /** 只允许在 serialize 队列里调用：它本身不会再排队，自行排队会死锁 */
   private async doRefresh(rec: StoredToken): Promise<string> {
     this.requireConfigured()
     const resp = await this.postToken({

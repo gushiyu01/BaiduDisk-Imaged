@@ -10,9 +10,14 @@ const BY_EXT: Record<string, string> = {
   mkv: 'video/x-matroska', webm: 'video/webm', wmv: 'video/x-ms-wmv',
   flv: 'video/x-flv', mpg: 'video/mpeg', mpeg: 'video/mpeg', '3gp': 'video/3gpp',
   ts: 'video/mp2t', rmvb: 'application/vnd.rn-realmedia-vbr',
+  // 这几个也在 VIDEO_EXTS 里（会被当成可播放的视频），表里必须有条目，
+  // 否则 /raw 一律按 octet-stream 强制下载 —— 明明浏览器能放却被下载
+  m2ts: 'video/mp2t', f4v: 'video/mp4', vob: 'video/mpeg',
+  rm: 'application/vnd.rn-realmedia',
   // 音频
   mp3: 'audio/mpeg', wav: 'audio/wav', flac: 'audio/flac', aac: 'audio/aac',
   ogg: 'audio/ogg', m4a: 'audio/mp4', wma: 'audio/x-ms-wma', opus: 'audio/opus',
+  ape: 'audio/x-ape', aiff: 'audio/aiff', mid: 'audio/midi', midi: 'audio/midi',
   // 文档
   pdf: 'application/pdf', txt: 'text/plain', md: 'text/markdown',
   markdown: 'text/markdown', csv: 'text/csv', tsv: 'text/tab-separated-values',
@@ -35,6 +40,21 @@ export const OCTET_STREAM = 'application/octet-stream'
 export function mimeFromFilename(filename: string | null | undefined, ext: string): string {
   void filename
   return BY_EXT[ext] ?? OCTET_STREAM
+}
+
+/**
+ * 能不能让浏览器在本应用的同源下内联打开。
+ *
+ * 只有图片（不含 SVG）、视频、音频、PDF 算安全：SVG 和 HTML 一样，
+ * 顶层打开就能执行脚本，脚本拿着用户的会话可以调用全部管理接口。
+ * 其余类型必须强制下载（或至少不给可执行的内容类型）。
+ */
+export function isInlineSafeMime(mime: string): boolean {
+  const type = mime.split(';')[0].trim().toLowerCase()
+  if (type === 'application/pdf') return true
+  // image/svg+xml 以及各种写法的 svg 变体（image/svg 等）一律不放行
+  if (type.startsWith('image/')) return !type.includes('svg')
+  return type.startsWith('video/') || type.startsWith('audio/')
 }
 
 /** 按魔数判断，不信文件名也不信上游 Content-Type */

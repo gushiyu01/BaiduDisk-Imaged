@@ -100,7 +100,15 @@ const hasFilters = computed(
 
 /* -------------------- 数据加载 -------------------- */
 
+/**
+ * 竞态保护：搜索、翻页、切筛选都会并发触发 load()，只接受最后一次的结果。
+ * 没有这道保护时，先发出的请求若后返回，会把列表覆盖成旧条件的内容 ——
+ * 界面上的筛选条件和列表对不上。做法与图库 store 一致。
+ */
+let loadSequence = 0
+
 async function load(): Promise<void> {
+  const mine = ++loadSequence
   loading.value = true
   error.value = ''
   try {
@@ -113,13 +121,15 @@ async function load(): Promise<void> {
       favorite: favoriteOnly.value ? true : undefined,
       tag: selectedTags.value.length > 0 ? selectedTags.value : undefined
     })
+    if (mine !== loadSequence) return
     items.value = result.items
     total.value = result.total
   } catch (err) {
+    if (mine !== loadSequence) return
     error.value = getErrorMessage(err)
     // 失败时保留列表，不清空成白屏
   } finally {
-    loading.value = false
+    if (mine === loadSequence) loading.value = false
   }
 }
 
