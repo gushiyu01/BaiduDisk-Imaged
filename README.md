@@ -35,6 +35,7 @@ mobile/
 ```bash
 cd self-hosted
 cp .env.example .env      # 填百度开放平台的 AppID / AppKey / SecretKey
+#   凭证在 https://pan.baidu.com/union/console/applist → 应用列表 → 应用详情 → 应用凭证
 docker compose up -d --build
 # 打开 http://localhost:8088 → 创建管理员 → 「百度网盘」页完成授权 → 同步索引
 ```

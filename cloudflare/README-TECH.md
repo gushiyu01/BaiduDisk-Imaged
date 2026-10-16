@@ -139,7 +139,8 @@ node cloudflare/deploy.mjs
 5. 从 `.dev.vars` → 项目 `.env` → 用户主目录 `.env` 里找百度凭证并下发为 secret
 6. 部署并打印访问地址
 
-百度凭证没找到时会跳过并提示，之后可以手动补：
+百度凭证在 [开放平台控制台 → 应用列表](https://pan.baidu.com/union/console/applist) 里创建应用后获取，
+没有配置时会跳过并提示，之后可以手动补：
 
 ```bash
 cd cloudflare/worker
@@ -204,8 +205,8 @@ npm run dev
 
 | 名字 | 类型 | 说明 |
 | --- | --- | --- |
-| `BAIDU_DISK_APP_KEY` | **secret** | 百度开放平台 AppKey |
-| `BAIDU_DISK_SECRET_KEY` | **secret** | 百度开放平台 SecretKey |
+| `BAIDU_DISK_APP_KEY` | **secret** | 百度开放平台 AppKey，[控制台](https://pan.baidu.com/union/console/applist) → 应用列表 → 应用详情 → 应用凭证 |
+| `BAIDU_DISK_SECRET_KEY` | **secret** | 百度开放平台 SecretKey，同上 |
 | `BAIDU_DISK_APP_ID` | secret（可选） | AppID，仅记录用 |
 | `BAIDU_BASE_DIR` | vars | 图库在网盘上的根目录，默认 `/apps/picman` |
 | `PICMAN_SESSION_HOURS` | vars | 登录有效期，默认 168 小时 |

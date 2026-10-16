@@ -3,6 +3,9 @@
 #
 # 线上用 `wrangler secret put <名字>` 下发，不要写进 wrangler.toml。
 
+# 获取位置：https://pan.baidu.com/union/console/applist
+#           → 应用列表 → 点开应用 → 应用凭证
+
 BAIDU_DISK_APP_ID=你的AppID
 BAIDU_DISK_APP_KEY=你的AppKey
 BAIDU_DISK_SECRET_KEY=你的SecretKey
