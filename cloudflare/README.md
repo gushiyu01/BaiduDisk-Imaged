@@ -3,7 +3,7 @@
 **把百度网盘变成你自己的图床**：注册一个百度网盘开放平台开发者应用，网页上上传的图片就存在**你自己的网盘**里，
 不会流到任何第三方服务器；配一套完整的网页图库，浏览、搜索、打标签、收藏、重命名、删除都在网页上完成。
 
-思路参考 **Telegraph-Image** / **Cloudflare 图床** 这类项目 —— 后端全部跑在 Cloudflare 上（Workers + D1 + KV），
+思路参考 [Telegraph-Image](https://github.com/cf-pages/Telegraph-Image) / **Cloudflare 图床** 这类项目 —— 后端全部跑在 Cloudflare 上（Workers + D1 + KV），
 不用买服务器、不用备案，**Free 套餐就能跑**。区别只在存储：不用 R2、不用第三方图床，落到你自己的百度网盘。
 
 > Cloudflare Workers · Vue 3 · 单管理员 · MIT
@@ -259,19 +259,10 @@ mobile/
 └── docs/                   接口契约（API.md）
 ```
 
-## 参考与致谢
+## 致谢
 
-- [Telegraph-Image](https://github.com/cf-pages/Telegraph-Image)：Cloudflare Workers 图床的经典实现，「纯边缘、无服务器」的思路就是照它来的
-- [百度网盘开放平台](https://pan.baidu.com/union)：存储能力与 OAuth 授权
-- Cloudflare Workers / D1 / KV / Durable Objects
-- Vue 3 + Element Plus
-- 感谢 [linux.do](https://linux.do) 社区
-
-## 反馈与交流
-
-在 [linux.do](https://linux.do) 帖子里回帖，或到仓库提 Issue / PR 都可以。
-如果这个项目对你有用，欢迎点个 Star；部署过程中卡在哪一步，也欢迎把报错贴出来。
-（部署脚本对常见坑（代理、凭证找不到、D1/KV 限额）都有提示，配合 Agent 一般能自己走完。）
+Thanks to the [LINUX DO](https://linux.do) community for its support.
+参考项目、完整致谢与反馈方式见[仓库根 README](../README.md)。
 
 ## 许可
 

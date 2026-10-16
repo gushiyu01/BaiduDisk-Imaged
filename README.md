@@ -75,6 +75,21 @@ node cloudflare/deploy.mjs
 百度返回的 `md5` 不是真实 MD5、`extra=1` 不保证返回宽高、Cloudflare Free 套餐算不动 4MB 的 MD5）
 都在对应 README 里说明了来龙去脉。
 
+## 参考与致谢
+
+- [Telegraph-Image](https://github.com/cf-pages/Telegraph-Image)：Cloudflare Workers 图床的经典实现，
+  Cloudflare 版「纯边缘、无服务器」的思路就是照它来的
+- [百度网盘开放平台](https://pan.baidu.com/union)：存储能力与 OAuth 授权
+- Cloudflare Workers / D1 / KV / Durable Objects
+- Vue 3 + Element Plus
+- Thanks to the [LINUX DO](https://linux.do) community for its support.
+
+## 反馈与交流
+
+在 [linux.do](https://linux.do) 帖子里回帖，或到仓库提 Issue / PR 都可以。
+如果这个项目对你有用，欢迎点个 Star；部署过程中卡在哪一步，也欢迎把报错贴出来。
+（部署脚本对常见坑（代理、凭证找不到、D1/KV 限额）都有提示，配合 Agent 一般能自己走完。）
+
 ## 许可
 
 [MIT](LICENSE)
