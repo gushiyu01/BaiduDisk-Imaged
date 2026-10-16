@@ -16,7 +16,7 @@
 ## 一、快速开始（Docker Compose）
 
 ```bash
-git clone <本仓库> picman && cd picman
+git clone https://github.com/gushiyu01/BaiduDisk-Imaged.git && cd BaiduDisk-Imaged/self-hosted
 cp .env.example .env
 # 编辑 .env，至少填入百度网盘开放平台的三个凭证
 docker compose up -d --build

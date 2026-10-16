@@ -49,7 +49,8 @@ node cloudflare/deploy.mjs
 ```
 
 详细步骤见各自的 README： [`self-hosted/README.md`](self-hosted/README.md) ·
-[`cloudflare/README.md`](cloudflare/README.md)
+[`cloudflare/README.md`](cloudflare/README.md)（Cloudflare 版的技术档案：
+[`cloudflare/README-TECH.md`](cloudflare/README-TECH.md)）
 
 ## 两套共用的东西
 
@@ -75,4 +76,4 @@ node cloudflare/deploy.mjs
 
 ## 许可
 
-MIT
+[MIT](LICENSE)
